@@ -141,7 +141,6 @@ struct NowPlayingView: View {
     @State private var showEditSong = false
     
     @State private var showMoreOptions = false
-    @State private var lyricsEnabled = false
     @State private var hasLyrics = false
     @State private var showLyricsEditor = false
     @State private var currentLyricsLine = ""
@@ -215,9 +214,31 @@ struct NowPlayingView: View {
             .appendingPathComponent("Lyrics", isDirectory: true)
             .appendingPathComponent("\(currentSongID.uuidString).lrc")
 
-        hasLyrics = FileManager.default.fileExists(
-            atPath: lyricsURL.path
-        )
+        guard let content = try? String(
+            contentsOf: lyricsURL,
+            encoding: .utf8
+        ) else {
+            hasLyrics = false
+            currentLyricsLine = ""
+            return
+        }
+
+        let validLines = content
+            .components(separatedBy: .newlines)
+            .filter { line in
+                guard line.hasPrefix("["),
+                      let closingBracket = line.firstIndex(of: "]")
+                else {
+                    return false
+                }
+
+                return !line[line.index(after: closingBracket)...]
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .isEmpty
+            }
+
+        hasLyrics = !validLines.isEmpty
+        loadCurrentLyricsLine()
     }
 
     private var progress: Double {
@@ -263,9 +284,9 @@ struct NowPlayingView: View {
                 endPoint: .bottomTrailing
             )
             .ignoresSafeArea()
-
+            
             VStack(spacing: 14) {
-
+                
                 // Header: Close, title, and more options.
                 HStack {
                     Button {
@@ -278,16 +299,16 @@ struct NowPlayingView: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Close Now Playing")
-
+                    
                     Spacer()
-
+                    
                     Text("NOW PLAYING")
                         .font(.caption.bold())
                         .tracking(3)
                         .lineLimit(1)
-
+                    
                     Spacer()
-
+                    
                     Button {
                         showMoreOptions = true
                     } label: {
@@ -300,9 +321,9 @@ struct NowPlayingView: View {
                     .accessibilityLabel("More options")
                 }
                 .foregroundStyle(.white.opacity(0.85))
-
+                
                 Spacer(minLength: 2)
-
+                
                 // Album artwork.
                 ZStack {
                     RoundedRectangle(cornerRadius: 30)
@@ -316,19 +337,19 @@ struct NowPlayingView: View {
                                 endPoint: .bottomTrailing
                             )
                         )
-
+                    
                     if let artworkURL,
                        let imageData = try? Data(contentsOf: artworkURL),
                        let artwork = UIImage(data: imageData) {
-
+                        
                         Image(uiImage: artwork)
                             .resizable()
                             .scaledToFit()
-//                            .frame(width: 150, height: 150)
+                        //                            .frame(width: 150, height: 150)
                             .clipShape(
                                 RoundedRectangle(cornerRadius: 30)
                             )
-
+                        
                     } else {
                         Image(systemName: "waveform")
                             .font(
@@ -350,80 +371,58 @@ struct NowPlayingView: View {
                 
                 
                 // Compact one-line Lyrics section.
-                HStack(spacing: 8) {
-                    Image(systemName: "quote.opening")
-                        .font(.subheadline)
-                        .foregroundStyle(.mint)
+                if hasLyrics {
+                    HStack(spacing: 8) {
+                        Image(systemName: "quote.opening")
+                            .foregroundStyle(.mint)
 
-                    ZStack(alignment: .leading) {
-                        if !lyricsEnabled {
-                            Text("Lyrics are turned off")
-                                .id("lyrics-off")
-                                .transition(
-                                    .asymmetric(
-                                        insertion: .move(edge: .bottom).combined(with: .opacity),
-                                        removal: .move(edge: .top).combined(with: .opacity)
-                                    )
-                                )
-                        } else {
-                            Text(
-                                currentLyricsLine.isEmpty
-                                    ? "Lyrics will appear here"
-                                    : currentLyricsLine
-                            )
-                            .id(currentLyricsLine)
-                            .transition(
-                                .asymmetric(
-                                    insertion: .move(edge: .bottom).combined(with: .opacity),
-                                    removal: .move(edge: .top).combined(with: .opacity)
-                                )
-                            )
-                        }
+                        Text(currentLyricsLine)
+                            .font(.subheadline)
+                            .foregroundStyle(.white)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+
+                        Spacer(minLength: 0)
                     }
-                    .font(.subheadline)
-                    .foregroundStyle(.white.opacity(1))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 14)
+                    .frame(height: 36)
+                    .background(
+                        .white.opacity(0.04),
+                        in: RoundedRectangle(cornerRadius: 12)
+                    )
                     .clipped()
-                    .animation(.easeInOut(duration: 0.5), value: lyricsEnabled)
-                    .animation(.easeInOut(duration: 0.5), value: currentLyricsLine)
-
-                    Spacer(minLength: 0)
+                    .animation(
+                        .easeInOut(duration: 0.35),
+                        value: currentLyricsLine
+                    )
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 14)
-                .frame(height: 36)
-                .background(
-                    .white.opacity(0.04),
-                    in: RoundedRectangle(cornerRadius: 12)
-                )
-                
+                //
                 
                 // Song information.
                 VStack(alignment: .leading, spacing: 8) {
                     // marquee action in the title
                     ScrollingSongTitle(title: title)
                         .frame(maxWidth: .infinity)
-
+                    
                     Text(artist)
                         .font(.subheadline)
                         .foregroundStyle(.white.opacity(0.65))
                     // Open the list of playlists available for this song
-//                    Button {
-//                        showPlaylistPicker = true
-//                    } label: {
-//                        Label("Add to Playlist", systemImage: "plus.circle.fill")
-//                            .font(.subheadline.weight(.semibold))
-//                            .foregroundStyle(.mint)
-//                            .padding(.vertical, 10)
-//                            .padding(.horizontal, 14)
-//                            .background(.mint.opacity(0.12), in: Capsule())
-//                    }
-//                    .buttonStyle(.plain)
+                    //                    Button {
+                    //                        showPlaylistPicker = true
+                    //                    } label: {
+                    //                        Label("Add to Playlist", systemImage: "plus.circle.fill")
+                    //                            .font(.subheadline.weight(.semibold))
+                    //                            .foregroundStyle(.mint)
+                    //                            .padding(.vertical, 10)
+                    //                            .padding(.horizontal, 14)
+                    //                            .background(.mint.opacity(0.12), in: Capsule())
+                    //                    }
+                    //                    .buttonStyle(.plain)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-
+                
                 // Playback progress.
                 VStack(spacing: 8) {
                     // Live playback progress slider
@@ -444,9 +443,9 @@ struct NowPlayingView: View {
                     // Elapsed time on the left, remaining time on the right
                     HStack {
                         Text(timeString(currentTime))
-
+                        
                         Spacer()
-
+                        
                         Text("-" + timeString(max(duration - currentTime, 0)))
                     }
                     .font(.caption.monospacedDigit())
@@ -466,9 +465,9 @@ struct NowPlayingView: View {
                             .background(.mint.opacity(0.12), in: Capsule())
                     }
                     .buttonStyle(.plain)
-
+                    
                     Spacer(minLength: 4)
-
+                    
                     Button {
                         onToggleFavourite()
                     } label: {
@@ -481,7 +480,7 @@ struct NowPlayingView: View {
                     .accessibilityLabel(
                         isFavourite ? "Remove from Favourites" : "Add to Favourites"
                     )
-
+                    
                     Button {
                         showQueue = true
                     } label: {
@@ -495,10 +494,10 @@ struct NowPlayingView: View {
                     .accessibilityLabel("Open Queue")
                 }
                 .frame(maxWidth: .infinity)
-
+                
                 // Playback Controls: Shuffle, Previous, Play/Pause, Next, Repeat.
                 HStack(spacing: 0) {
-
+                    
                     // Shuffle
                     Button(action: onShuffle) {
                         Image(systemName: "shuffle")
@@ -510,9 +509,9 @@ struct NowPlayingView: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Toggle Shuffle")
-
+                    
                     Spacer(minLength: 0)
-
+                    
                     // Previous
                     Button(action: onPrevious) {
                         Image(systemName: "backward.end.fill")
@@ -522,9 +521,9 @@ struct NowPlayingView: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Previous Song")
-
+                    
                     Spacer(minLength: 0)
-
+                    
                     // Play/Pause
                     Button(action: onPlayPause) {
                         Image(
@@ -537,9 +536,9 @@ struct NowPlayingView: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(isPlaying ? "Pause" : "Play")
-
+                    
                     Spacer(minLength: 0)
-
+                    
                     // Next
                     Button(action: onNext) {
                         Image(systemName: "forward.end.fill")
@@ -549,15 +548,15 @@ struct NowPlayingView: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Next Song")
-
+                    
                     Spacer(minLength: 0)
-
+                    
                     // Repeat
                     Button(action: onRepeat) {
                         Image(
                             systemName: repeatMode == .repeatOne
-                                ? "repeat.1"
-                                : "repeat"
+                            ? "repeat.1"
+                            : "repeat"
                         )
                         .font(.title3)
                         .foregroundStyle(
@@ -570,24 +569,25 @@ struct NowPlayingView: View {
                 }
                 .frame(maxWidth: .infinity)
                 .foregroundStyle(.white)
-
+                
                 Spacer(minLength: 8)
             }
             .padding(.horizontal, 26)
             .padding(.top, 18)
             .padding(.bottom, 8)
         }
+        
         .onAppear {
-            loadCurrentLyricsLine()
+            checkLyricsFile()
         }
         .onChange(of: currentTime) { _, _ in
             loadCurrentLyricsLine()
         }
         .onChange(of: currentSongID) { _, _ in
-            loadCurrentLyricsLine()
+            checkLyricsFile()
         }
         .preferredColorScheme(.dark)
-
+        
         // Present the Up Next Queue screen.
         .sheet(isPresented: $showQueue) {
             QueueView(
@@ -613,24 +613,24 @@ struct NowPlayingView: View {
             )
         }
         // Show only playlists that do not already contain this song
-//        .confirmationDialog(
-//            "Add to Playlist",
-//            isPresented: $showPlaylistPicker,
-//            titleVisibility: .visible
-//        ) {
-//            ForEach(availablePlaylists) { playlist in
-//                Button(playlist.name) {
-//                    onAddToPlaylist(playlist.id)
-//                    playlistMessage = "Added to \(playlist.name)"
-//                }
-//            }
-//
-//            if availablePlaylists.isEmpty {
-//                Button("No available playlists", role: .cancel) { }
-//            }
-//
-//            Button("Cancel", role: .cancel) { }
-//        }
+        //        .confirmationDialog(
+        //            "Add to Playlist",
+        //            isPresented: $showPlaylistPicker,
+        //            titleVisibility: .visible
+        //        ) {
+        //            ForEach(availablePlaylists) { playlist in
+        //                Button(playlist.name) {
+        //                    onAddToPlaylist(playlist.id)
+        //                    playlistMessage = "Added to \(playlist.name)"
+        //                }
+        //            }
+        //
+        //            if availablePlaylists.isEmpty {
+        //                Button("No available playlists", role: .cancel) { }
+        //            }
+        //
+        //            Button("Cancel", role: .cancel) { }
+        //        }
         
         .sheet(isPresented: $showPlaylistPicker) {
             NavigationStack {
@@ -647,9 +647,9 @@ struct NowPlayingView: View {
                             HStack {
                                 Text(playlist.name)
                                     .foregroundStyle(.primary)
-
+                                
                                 Spacer()
-
+                                
                                 Image(systemName: "plus.circle")
                                     .foregroundStyle(.mint)
                             }
@@ -692,9 +692,9 @@ struct NowPlayingView: View {
                         editedArtwork = nil
                         selectedPhoto = nil
                         shouldRemoveArtwork = false
-
+                        
                         showMoreOptions = false
-
+                        
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
                             showEditSong = true
                         }
@@ -702,11 +702,11 @@ struct NowPlayingView: View {
                         Label("Edit Song", systemImage: "pencil")
                             .foregroundStyle(.primary)
                     }
-
+                    
                     // Add Lyrics / Edit Lyrics
                     Button {
                         showMoreOptions = false
-
+                        
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
                             showLyricsEditor = true
                         }
@@ -717,22 +717,22 @@ struct NowPlayingView: View {
                         )
                         .foregroundStyle(.orange)
                     }
-
+                    
                     // Lyrics On / Off — only when lyrics exist
-                    if hasLyrics {
-                        Button {
-                            lyricsEnabled.toggle()
-                            showMoreOptions = false
-                        } label: {
-                            Label(
-                                lyricsEnabled ? "Lyrics Off" : "Lyrics On",
-                                systemImage: lyricsEnabled
-                                    ? "text.quote"
-                                    : "text.quote"
-                            )
-                            .foregroundStyle(.orange)
-                        }
-                    }
+                    //                    if hasLyrics {
+                    //                        Button {
+                    //                            lyricsEnabled.toggle()
+                    //                            showMoreOptions = false
+                    //                        } label: {
+                    //                            Label(
+                    //                                lyricsEnabled ? "Lyrics Off" : "Lyrics On",
+                    //                                systemImage: lyricsEnabled
+                    //                                    ? "text.quote"
+                    //                                    : "text.quote"
+                    //                            )
+                    //                            .foregroundStyle(.orange)
+                    //                        }
+                    //                    }
                 }
                 .navigationTitle("More Options")
                 .navigationBarTitleDisplayMode(.inline)
@@ -753,10 +753,10 @@ struct NowPlayingView: View {
                 Form {
                     Section("Song Information") {
                         TextField("Song Title", text: $editedTitle)
-
+                        
                         TextField("Artist", text: $editedArtist)
                     }
-
+                    
                     Section("Album Artwork") {
                         if let editedArtwork {
                             Image(uiImage: editedArtwork)
@@ -776,7 +776,7 @@ struct NowPlayingView: View {
                                 )
                             )
                         }
-
+                        
                         
                         PhotosPicker(
                             selection: $selectedPhoto,
@@ -790,12 +790,12 @@ struct NowPlayingView: View {
                         }
                         .onChange(of: selectedPhoto) { _, newPhoto in
                             guard let newPhoto else { return }
-
+                            
                             Task {
                                 if let data = try? await newPhoto.loadTransferable(
                                     type: Data.self
                                 ),
-                                let image = UIImage(data: data) {
+                                   let image = UIImage(data: data) {
                                     editedArtwork = image
                                     shouldRemoveArtwork = false
                                 }
@@ -803,8 +803,8 @@ struct NowPlayingView: View {
                             }
                             
                         }
-
-
+                        
+                        
                         if editedArtwork != nil {
                             Button("Remove Custom Artwork", role: .destructive) {
                                 editedArtwork = nil
@@ -821,20 +821,20 @@ struct NowPlayingView: View {
                             showEditSong = false
                         }
                     }
-
+                    
                     ToolbarItem(placement: .confirmationAction) {
                         Button("Save") {
                             let artworkData = editedArtwork?.jpegData(
                                 compressionQuality: 0.9
                             )
-
+                            
                             onSaveSong(
                                 editedTitle,
                                 editedArtist,
                                 artworkData,
                                 shouldRemoveArtwork
                             )
-
+                            
                             showEditSong = false
                         }
                         .foregroundStyle(.mint)
@@ -847,8 +847,8 @@ struct NowPlayingView: View {
                 }
             }
         }
-
-
+        
+        
         // Show confirmation after adding a song
         .alert(
             "Playlist Updated",
